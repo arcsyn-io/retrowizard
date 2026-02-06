@@ -1,0 +1,468 @@
+---
+name: analyze-retro
+description:
+  Analisa métricas de retrospectiva e gera report.md completo. 
+  Use quando o usuário pedir para analisar retrospectiva ou gerar relatório.
+  Assume que os gráficos PNG já foram gerados previamente.
+  Requer time, quarter e data da retrospectiva.
+allowed-tools: Read, Write, Glob, AskUserQuestion
+---
+
+# Analisar Retrospectiva e Gerar Relatório
+
+## Responsabilidade
+
+Esta skill **analisa métricas de retrospectiva** e gera o relatório completo. Ela:
+
+- ✅ Valida presença de arquivos CSV (cfd, throughput, leadtime, tickets)
+- ✅ Valida presença de gráficos PNG (cfd, throughput, leadtime, tickets)
+- ✅ Analisa estatísticas (médias, medianas, percentis, tendências)
+- ✅ Cria `report.md` baseado no Template.md com PNGs embutidos
+- ✅ Suporta análises parciais e incrementais
+
+## ⚠️  Pré-requisito
+
+**Esta skill ASSUME que os gráficos PNG já foram gerados.**
+
+Para gerar gráficos, execute antes:
+```bash
+python3 generate_metrics_charts.py [caminho-retrospectiva]
+```
+
+Ou use o `retro-wizard.py` que executa tudo automaticamente.
+
+## Informações Obrigatórias
+
+Você **DEVE** coletar estas 3 informações antes de prosseguir:
+
+### 1. Nome do Time
+
+**Exemplo:** `financeiro`, `produto`, `infra`
+
+### 2. Quarter
+
+**Exemplo:** `2025-Q4`, `2026-Q1`
+
+### 3. Data da Retrospectiva
+
+**Exemplo:** `2025-12-19`, `2026-01-07`
+
+### SE o usuário NÃO informar:
+
+Use `Glob` para encontrar as retrospectivas mais recentes e sugira ao usuário.
+
+## Workflow de Análise
+
+### Passo 1: Identificar o caminho da retrospectiva
+
+```
+Caminho: [time]/[YYYY-QN]/[YYYY-MM-DD]/
+Exemplo: financeiro/2025-Q4/2025-12-19/
+```
+
+### Passo 2: Validar arquivos CSV
+
+Verificar presença dos 4 arquivos esperados usando `Glob`:
+
+- `cfd.csv`
+- `throughput.csv`
+- `leadtime.csv`
+- `tickets.csv`
+
+**Casos:**
+
+#### Caso 2.1: Nenhum CSV encontrado
+
+```
+❌ Não foi possível continuar.
+
+Nenhum arquivo CSV foi encontrado em: [caminho]
+
+Para gerar o relatório, é necessário pelo menos um dos seguintes arquivos:
+• cfd.csv - Diagrama de Fluxo Cumulativo
+• throughput.csv - Métricas de vazão
+• leadtime.csv - Distribuição de lead time
+• tickets.csv - Exportação de tickets do Jira
+
+Por favor, adicione os arquivos CSV e tente novamente.
+```
+
+**FINALIZAR processo.**
+
+#### Caso 2.2: CSVs parciais encontrados
+
+Use `AskUserQuestion` para perguntar se quer continuar com análise parcial.
+
+Se "Não" → FINALIZAR processo. Se "Sim" → Continuar para Passo 3.
+
+#### Caso 2.3: Todos os CSVs encontrados
+
+Continuar para Passo 3.
+
+### Passo 3: Ler e processar CSVs
+
+Para cada CSV disponível, usar `Read` para carregar os dados e calcular métricas estatísticas.
+
+#### Processamento de Dados
+
+**CFD (cfd.csv):**
+
+- Parsear CSV manualmente (split por vírgula)
+- Colunas típicas: `Date`, `TESTING`, `READY TO TEST`, `CODE REVIEW`,
+  `IN PROGRESS`
+- Colunas opcionais: `BLOCKED`, `READY TO DEV`, `DONE` (detectar
+  automaticamente)
+- Ignorar colunas `DONE` e `READY TO DEV` nos gráficos
+- Calcular WIP médio baseado nas colunas disponíveis
+- Só mencionar bloqueios se coluna `BLOCKED` existir
+
+**Throughput (throughput.csv):**
+
+- Colunas: `Period`, `Throughput`
+- Calcular: média, mediana, máximo, mínimo, desvio padrão, CV
+
+**Lead Time (leadtime.csv):**
+
+- Colunas: `Leadtime`, `item count`
+- Expandir dados (leadtime × item_count)
+- Calcular: p50, p90, desvio padrão
+- Categorizar: Rápidos (≤5d), Normais (6-10d), Lentos (>10d)
+
+**Tickets (tickets.csv):**
+
+- Coluna: `Tipo de item`
+- Contar por tipo
+- Calcular percentuais
+- Identificar bugs e incidentes
+
+### Passo 4: Verificar PNGs
+
+**IMPORTANTE:** Verificar se os gráficos PNG já foram gerados:
+
+- `cfd.png`
+- `throughput.png`
+- `leadtime.png`
+- `tickets.png`
+
+**Se os PNGs NÃO existirem:**
+
+```
+❌ Gráficos PNG não encontrados.
+
+Os gráficos precisam ser gerados antes da análise.
+Execute primeiro:
+
+sugira usar o retro-wizard.py que executa tudo automaticamente.
+```
+
+**FINALIZAR processo.**
+
+**Se os PNGs existirem:** Continuar para Passo 5.
+
+### Passo 5: Calcular Métricas para o Report
+
+Usar as métricas calculadas no Passo 3 para preencher o relatório.
+
+**Throughput:**
+
+```
+📊 THROUGHPUT:
+  Média: 18.8 itens/semana
+  Mediana: 20
+  Máximo: 28
+  Mínimo: 0
+  Variabilidade (CV): 56.2%
+  Previsibilidade: Média
+
+  📈 Tendência: Estável com variação alta
+  ⚠️  Semana de 2025-12-22 teve throughput 0 (atenção!)
+```
+
+**Lead Time:**
+
+```
+⏱️ LEAD TIME:
+  p50 (Mediana): 2.0 dias
+  p90: 7.0 dias
+  Desvio padrão: 3.2 dias
+
+  Categorização:
+  • Rápidos (≤5d): 27 itens (71.1%)
+  • Normais (6-10d): 8 itens (21.1%)
+  • Lentos (>10d): 3 itens (7.9%)
+
+  ✅ Insight: Maioria dos itens flui rapidamente
+  ⚠️  3 outliers lentos requerem atenção
+```
+
+**Tickets:**
+
+```
+🎫 DISTRIBUIÇÃO DE TIPOS:
+  • Tarefa: 34 (68.0%)
+  • Bug: 8 (16.0%)
+  • Incidente: 8 (16.0%)
+
+  ⚠️  Bugs: 16.0% do total
+  🚨 Incidentes: 16.0% do total
+
+  ⚠️  ATENÇÃO: Alta taxa de incidentes (>10%), revisar estabilidade
+```
+
+### Passo 6: Gerar report.md
+
+Copiar o `Template.md` e preencher com análises e PNGs embutidos:
+
+#### Estrutura do Report
+
+```markdown
+# 📊 Retrospectiva Financeiro — 19/12/2025
+
+## Identificação do Ciclo
+
+- **Ciclo:** Sprint 2025-Q4
+- **Período:** 08/12/2025 — 19/12/2025
+- **Time:** Financeiro
+- **Facilitador:** [A definir]
+
+---
+
+## Resumo Executivo do Ciclo
+
+| Métrica                      | Valor             |
+| ---------------------------- | ----------------- |
+| Média de Throughput (30d)    | 18.8 itens/semana |
+| Lead Time p90                | 7.0 dias          |
+| Bugs reportados (últimas 2w) | 8 (16.0%)         |
+| Incidentes (últimas 2w)      | 8 (16.0%)         |
+
+---
+
+## Fluxo de Trabalho (CFD)
+
+![CFD](./cfd.png)
+
+**Análise:**
+
+- WIP médio: {{calcular}} itens
+- Fluxo: {{descrever estabilidade}}
+- {{Observações sobre colunas principais}}
+
+**Nota:** Só mencionar bloqueios se a coluna BLOCKED existir nos dados
+
+---
+
+## Throughput
+
+![Throughput](./throughput.png)
+
+### Resumo
+
+| Métrica       | Valor             |
+| ------------- | ----------------- |
+| Média         | 18.8 itens/semana |
+| Mediana       | 20                |
+| Máximo        | 28                |
+| Mínimo        | 0                 |
+| Variabilidade | 56.2%             |
+
+### Análise
+
+- Previsibilidade média (CV 56%)
+- Tendência estável mas com alta variação
+- Semana de 22/12 teve throughput 0 (provável feriado)
+- Pico em 01/12 com 28 itens
+
+---
+
+## Lead Time
+
+![Lead Time](./leadtime.png)
+
+### Resumo
+
+| Métrica           | Valor    |
+| ----------------- | -------- |
+| Lead Time p90     | 7.0 dias |
+| Lead Time mediano | 2.0 dias |
+| Desvio padrão     | 3.2 dias |
+
+### Classificação dos Itens
+
+| Categoria           | Quantidade | %     | Observação |
+| ------------------- | ---------- | ----- | ---------- |
+| Rápidos (≤5 dias)   | 27         | 71.1% | Maioria    |
+| Normais (6–10 dias) | 8          | 21.1% | Aceitável  |
+| Lentos (>10 dias)   | 3          | 7.9%  | Outliers   |
+
+**Insights:**
+
+- Excelente fluxo: 71% dos itens são rápidos
+- 3 itens outliers (>10 dias) requerem investigação
+
+---
+
+## Distribuição de Tipos de Itens
+
+![Tickets](./tickets.png)
+
+| Tipo      | Quantidade | %     |
+| --------- | ---------- | ----- |
+| Tarefa    | 34         | 68.0% |
+| Bug       | 8          | 16.0% |
+| Incidente | 8          | 16.0% |
+
+**Análise:**
+
+- ⚠️ Bugs em 16% do total - monitorar qualidade
+- 🚨 Incidentes em 16% - ATENÇÃO: alta taxa, revisar estabilidade
+- Balanceamento: 68% tarefas planejadas vs 32% reativo
+
+---
+
+## Principais Conquistas
+
+{{A preencher manualmente com base em retrocards.md}}
+
+---
+
+## Principais Desafios
+
+{{A preencher manualmente com base em retrocards.md}}
+
+---
+
+## Ações Definidas
+
+{{A preencher manualmente com base em retrocards.md}}
+```
+
+#### Para seções faltantes (se CSVs parciais):
+
+```markdown
+## Throughput
+
+**⚠️ _necessita arquivo throughput.csv_**
+
+Esta seção será preenchida quando o arquivo for adicionado. Execute a análise
+novamente após adicionar o CSV.
+```
+
+### Passo 5: Calcular Métricas para o Report
+
+Usar as métricas calculadas no Passo 3 para preencher o relatório.
+
+**Throughput:**
+
+### Passo 7: Salvar arquivos
+
+Usar `Write` para salvar:
+
+1. `report.md` - Relatório completo
+
+Os PNGs já foram gerados previamente (Passo 4).
+
+### Passo 8: Informar ao usuário
+
+```
+✅ Análise completa!
+
+📊 Arquivos gerados:
+
+✅ report.md - Relatório completo com PNGs embutidos
+
+📁 Caminho: financeiro/2025-Q4/2025-12-19/
+
+---
+
+📊 Métricas principais:
+
+• Throughput médio: 18.8 itens/semana (CV: 56.2%)
+• Lead Time p90: 7.0 dias
+• Bugs: 8 (16.0% do total)
+• Incidentes: 8 (16.0% do total)
+
+⚠️  ALERTAS:
+• Alta taxa de incidentes (16% > 10%)
+• Variabilidade alta no throughput (CV 56%)
+
+---
+
+📝 Próximos passos:
+
+1. Revise o report.md gerado
+2. Preencha as seções qualitativas:
+   - Principais Conquistas
+   - Principais Desafios
+   - Ações Definidas
+
+💡 Dica: Use retrocards.md como base para preencher seções qualitativas
+```
+
+## Comportamento Incremental
+
+### Atualizações
+
+Quando executar novamente na mesma retrospectiva:
+
+1. **Re-análise completa:** Sempre analisar todos os CSVs do zero
+2. **Sobrescrever report.md:** Arquivo será substituído
+3. **Avisar usuário:**
+
+```
+⚠️  Já existe um report.md nesta retrospectiva.
+A análise será refeita e o arquivo será sobrescrito.
+As seções qualitativas preenchidas manualmente serão perdidas.
+
+Deseja continuar?
+```
+
+## Validações Adicionais
+
+### Exemplo 1: Análise completa
+
+**Usuário:** "Analise a retrospectiva do financeiro de 19/12/2025 do Q4"
+
+**Pré-condição:** PNGs já foram gerados
+
+**Ação:**
+
+1. Verificar presença de 4 CSVs
+2. Verificar presença de 4 PNGs
+3. Calcular métricas
+4. Gerar report.md completo
+
+### Exemplo 2: Análise parcial
+
+**Usuário:** "Analise retro do produto em 04/01/2026 Q1"
+
+**Situação:** Só tem cfd.csv e tickets.csv (com PNGs correspondentes)
+
+**Ação:**
+
+1. Avisar análise parcial
+2. Perguntar se quer continuar
+3. Gerar report.md parcial com seções faltantes marcadas
+
+### Exemplo 3: PNGs faltando
+
+**Usuário:** "Analise retro do financeiro"
+
+**Situação:** Tem CSVs mas não tem PNGs
+
+**Ação:**
+
+1. Detectar ausência de PNGs
+2. Informar que precisa gerar gráficos primeiro
+3. Sugerir comando para gerar PNGs
+4. FINALIZAR processo
+
+## Limitações
+
+Esta skill **NÃO**:
+
+- Gera gráficos PNG (use `generate_metrics_charts.py` ou `retro-wizard.py`)
+- Preenche seções qualitativas automaticamente (Conquistas, Desafios, Ações)
+- Lê ou processa retrocards.md automaticamente
+- Valida dados profundamente (assume CSVs corretos e bem formatados)
+- Gera PDF (use pandoc manualmente: `pandoc report.md -o report.pdf`)
