@@ -1,6 +1,6 @@
-# Retrospectives
+# RetroWizard
 
-Repositório para gerenciamento de retrospectivas de sprint.
+Repositório para gerenciamento de retrospectivas.
 
 ## Propósito
 
@@ -136,3 +136,4 @@ pip install pandas matplotlib requests
 ## Times Ativos
 
 Configurados via variável de ambiente `JIRA_BOARD_<TIME>` no `.env`.
+
